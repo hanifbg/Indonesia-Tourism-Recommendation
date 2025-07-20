@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python/
+venv/
+env/
+.env
+.pytest_cache/
+.ipynb_checkpoints/ # If using Jupyter notebooks
+
+# Editor
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+.Trashes
+Thumbs.db
+
+# Docker
+*.log
+*.tar
+*.bak
+*.tmp
+
+# MLflow
+# Generally, you *do* want to track mlruns for reproducibility,
+# but if you have very large artifacts and manage them externally,
+# you might add:
+# mlruns/
+
+# Go (if applicable)
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/.bin/
+/vendor/
+
+# Node (if applicable for frontend)
+node_modules/
+dist/
+build/
+.parcel-cache/
