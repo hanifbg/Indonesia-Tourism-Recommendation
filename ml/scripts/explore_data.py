@@ -9,10 +9,10 @@ import numpy as np
 
 # Database connection details (same as ingest-data.py)
 DB_HOST = os.getenv('DB_HOST', 'host.docker.internal')
-DB_NAME = os.getenv('DB_NAME', 'deploycamp') # Ensure this matches your actual DB name
+DB_NAME = os.getenv('DB_NAME', 'postgres') # Ensure this matches your actual DB name
 DB_USER = os.getenv('DB_USER', 'postgres')
-DB_PASSWORD = os.getenv('DB_PASSWORD', '1') # Use your actual password
-DB_PORT = os.getenv('DB_PORT', '5435') # Ensure this matches your actual exposed port for PostgreSQL
+DB_PASSWORD = os.getenv('DB_PASSWORD', 'password') # Use your actual password
+DB_PORT = os.getenv('DB_PORT', '5432') # Ensure this matches your actual exposed port for PostgreSQL
 
 def get_db_connection():
     """Establishes and returns a database connection."""

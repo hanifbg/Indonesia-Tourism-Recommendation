@@ -23,8 +23,8 @@ COPY ml/data/ ./ml/data/
 # On Linux, you might need to use the IP address of the docker0 bridge, or configure
 # your Docker network to resolve the host. 'localhost' might work if network is 'host'.
 ENV DB_HOST=host.docker.internal
-ENV DB_PORT=5435
-ENV DB_NAME=deploycamp
+ENV DB_PORT=5432
+ENV DB_NAME=postgres
 ENV DB_USER=postgres
 
 # Command to run the Python script when the container starts

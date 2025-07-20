@@ -12,10 +12,10 @@ register_adapter(np.int64, AsIs)
 
 # Database connection details
 DB_HOST = os.getenv('DB_HOST', 'host.docker.internal')
-DB_NAME = os.getenv('DB_NAME', 'deploycamp')
+DB_NAME = os.getenv('DB_NAME', 'postgres')
 DB_USER = os.getenv('DB_USER', 'postgres')
-DB_PASSWORD = os.getenv('DB_PASSWORD', '1')
-DB_PORT = os.getenv('DB_PORT', '5435')
+DB_PASSWORD = os.getenv('DB_PASSWORD', 'password')
+DB_PORT = os.getenv('DB_PORT', '5432')
 
 # Paths to your CSV files
 TOURISM_DATA_CSV = 'ml/data/tourism_with_id.csv'
