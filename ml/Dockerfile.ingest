@@ -1,0 +1,31 @@
+# Dockerfile for data ingestion script
+
+# Use a slim Python image for smaller size
+FROM python:3.10-slim-buster
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy the requirements file and install dependencies first (for Docker layer caching)
+COPY ml/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+RUN mkdir -p ml/scripts ml/data
+
+# Copy the Python script from ml/scripts/ingest-data.py to /app/ml/scripts/
+COPY ml/scripts/ingest-data.py ./ml/scripts/
+
+# Copy the entire data directory from ml/data/ to /app/ml/data/
+COPY ml/data/ ./ml/data/
+
+# Set environment variables for database connection
+# 'host.docker.internal' is a special DNS name for Docker Desktop to reach host machine
+# On Linux, you might need to use the IP address of the docker0 bridge, or configure
+# your Docker network to resolve the host. 'localhost' might work if network is 'host'.
+ENV DB_HOST=host.docker.internal
+ENV DB_PORT=5435
+ENV DB_NAME=deploycamp
+ENV DB_USER=postgres
+
+# Command to run the Python script when the container starts
+CMD ["python", "ml/scripts/ingest-data.py"]
