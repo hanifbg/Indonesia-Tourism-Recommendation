@@ -1,0 +1,14 @@
+artifact_uri: mlflow-artifacts:/139926241664491643/feca76ad62de4866ae3895c25f2eb96f/artifacts
+end_time: 1753084290690
+entry_point_name: ''
+experiment_id: '139926241664491643'
+lifecycle_stage: active
+run_id: feca76ad62de4866ae3895c25f2eb96f
+run_name: SVD_CF_Model_Training
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1753084290514
+status: 3
+tags: []
+user_id: root

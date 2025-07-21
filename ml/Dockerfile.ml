@@ -30,8 +30,8 @@ COPY ml/scripts/train_model.py ./ml/scripts/
 
 # Set environment variables for database connection (runtime injection is best practice for production, but ENV for capstone utility is okay)
 ENV DB_HOST=host.docker.internal
-ENV DB_PORT=5432
-ENV DB_NAME=postgres
+ENV DB_PORT=5435
+ENV DB_NAME=deploycamp
 ENV DB_USER=postgres
 
 # Default command to run the EDA script.
