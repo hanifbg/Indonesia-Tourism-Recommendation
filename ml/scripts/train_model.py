@@ -17,6 +17,7 @@ from surprise import accuracy
 import mlflow
 import pickle
 
+
 # Register numpy.int64 adapter for psycopg2
 register_adapter(np.int64, AsIs)
 
@@ -134,7 +135,7 @@ def split_data(places_df, content_features_df, ratings_df):
     
     trainset, testset = surprise_train_test_split(data, test_size=0.2, random_state=42)
     
-    print(f"Collaborative Filtering Trainset Size: {trainset.n_ratings} interactions")
+    print(f"Collaborative Filtering Trainset Size: {trainset.n_ratings} interactions") 
     print(f"Collaborative Filtering Testset Size: {len(testset)} interactions")
 
     print("\n--- Data Splitting Completed ---")
@@ -143,6 +144,12 @@ def split_data(places_df, content_features_df, ratings_df):
 def train_models(trainset, testset, content_features_df, tfidf_vectorizer, ohe_encoder):
     """Trains the Collaborative Filtering model and evaluates it, logging to MLflow."""
     print("\n--- Starting Model Training ---")
+
+    # --- FIX START ---
+    # Ensure the ml/models directory exists BEFORE saving
+    models_dir = "ml/models/"
+    os.makedirs(models_dir, exist_ok=True)
+    # --- FIX END ---
 
     mlflow.set_experiment("Tourism Recommendation System")
     with mlflow.start_run(run_name="SVD_CF_Model_Training"):
@@ -171,25 +178,28 @@ def train_models(trainset, testset, content_features_df, tfidf_vectorizer, ohe_e
         mlflow.log_metric("cf_rmse", rmse)
         mlflow.log_metric("cf_mae", mae)
 
-        # Log the trained CF model as a pickle artifact
-        print("Logging CF model to MLflow...")
-        cf_model_path = "cf_model.pkl"
-        with open(cf_model_path, "wb") as f:
-            pickle.dump(cf_model, f)
-        mlflow.log_artifact(cf_model_path, "cf_model_artifact")
+        # Log the trained CF model as a pickle artifact to MLflow and a fixed local path
+        print("Logging CF model to MLflow and saving to ml/models/...")
+        cf_model_local_path = os.path.join(models_dir, "cf_model.pkl") # Use os.path.join for robustness
+        # os.makedirs(os.path.dirname(cf_model_local_path), exist_ok=True) # This is now handled by the early os.makedirs
 
-        # Log the TF-IDF Vectorizer and OneHotEncoder as artifacts
-        print("Logging TF-IDF Vectorizer and OneHotEncoder to MLflow...")
-        tfidf_path = "tfidf_vectorizer.pkl"
-        ohe_path = "ohe_encoder.pkl"
-        with open(tfidf_path, "wb") as f:
+        with open(cf_model_local_path, "wb") as f:
+            pickle.dump(cf_model, f)
+        mlflow.log_artifact(cf_model_local_path, "cf_model_artifact")
+
+        # Log the TF-IDF Vectorizer and OneHotEncoder as artifacts to MLflow and fixed local paths
+        print("Logging TF-IDF Vectorizer and OneHotEncoder to MLflow and saving to ml/models/...")
+        tfidf_local_path = os.path.join(models_dir, "tfidf_vectorizer.pkl")
+        ohe_local_path = os.path.join(models_dir, "ohe_encoder.pkl")
+        
+        with open(tfidf_local_path, "wb") as f:
             pickle.dump(tfidf_vectorizer, f)
-        with open(ohe_path, "wb") as f:
+        with open(ohe_local_path, "wb") as f:
             pickle.dump(ohe_encoder, f)
         
-        mlflow.log_artifact(tfidf_path, "feature_engineering_artifacts")
-        mlflow.log_artifact(ohe_path, "feature_engineering_artifacts")
-        print("Feature engineering tools logged to MLflow.")
+        mlflow.log_artifact(tfidf_local_path, "feature_engineering_artifacts")
+        mlflow.log_artifact(ohe_local_path, "feature_engineering_artifacts")
+        print("Feature engineering tools logged to MLflow and saved to ml/models/.")
 
         # --- Content-Based Model Preparation ---
         print("Content-Based model: Features prepared. Similarity calculation will be done during inference.")
@@ -197,8 +207,8 @@ def train_models(trainset, testset, content_features_df, tfidf_vectorizer, ohe_e
         print("\n--- Model Training & Evaluation Completed ---")
         return cf_model # Return the trained CF model
 
-# --- NEW: Hybrid Recommendation Logic Function ---
-# FIX: Added ratings_df to the function arguments
+# --- Hybrid Recommendation Logic Function ---
+# (No changes needed in this function for the current error, copied as is)
 def get_hybrid_recommendations(
     user_id: int, 
     cf_model, 
@@ -206,7 +216,7 @@ def get_hybrid_recommendations(
     content_features_df: pd.DataFrame, 
     tfidf_vectorizer: TfidfVectorizer, 
     ohe_encoder: OneHotEncoder, 
-    ratings_df: pd.DataFrame, # <--- NEW: Add ratings_df here
+    ratings_df: pd.DataFrame,
     num_recommendations: int = 10,
     top_n_cf: int = 20,
     top_n_cb: int = 20,
@@ -219,119 +229,91 @@ def get_hybrid_recommendations(
     """
     print(f"\nGenerating hybrid recommendations for user_id: {user_id}")
 
-    # 1. Collaborative Filtering (CF) Recommendations
-    # Get a list of all place_ids the user has NOT rated yet
-    # Use the passed ratings_df instead of trying to get it from DB again
     user_ratings_for_cf = ratings_df[ratings_df['user_id'] == user_id]
     rated_place_ids = user_ratings_for_cf['place_id'].tolist()
     
-    # Get unrated places
     unrated_places = places_df[~places_df['place_id'].isin(rated_place_ids)]
     
-    if len(user_ratings_for_cf) > 0: # User has ratings - use CF
+    if len(user_ratings_for_cf) > 0:
         print(f"User {user_id} has {len(user_ratings_for_cf)} existing ratings. Using CF.")
         cf_predictions = []
         for place_id in unrated_places['place_id']:
-            # Predict rating for each unrated place
-            # Ensure the place_id is known to the CF model (may not be for brand new places)
             if cf_model.trainset.knows_item(place_id):
                 predicted_rating = cf_model.predict(user_id, place_id).est
                 cf_predictions.append({'place_id': place_id, 'predicted_rating': predicted_rating})
-            # else: skip this place if CF model doesn't know it, rely on CB
         
         cf_recs_df = pd.DataFrame(cf_predictions).sort_values(by='predicted_rating', ascending=False)
         
-    else: # Cold-start user - no ratings
+    else:
         print(f"User {user_id} is cold-start (no ratings). Relying on Content-Based and popularity.")
-        cf_recs_df = pd.DataFrame() # Empty CF recs
-        cf_weight = 0.0 # No CF contribution for cold-start
+        cf_recs_df = pd.DataFrame()
+        cf_weight = 0.0
 
-    # 2. Content-Based (CB) Recommendations (for cold-start or to diversify CF)
     cb_recs_df = pd.DataFrame()
     
-    if len(user_ratings_for_cf) > 0: # User has ratings - find content-similar to their liked places
-        # Find user's top-rated places (e.g., top 3) to use as content base
+    if len(user_ratings_for_cf) > 0:
         top_user_rated_places_ids = user_ratings_for_cf.sort_values(by='place_rating', ascending=False).head(3)['place_id'].tolist()
         
-        if top_user_rated_places_ids: # Ensure there are top rated places to use for CB
-            # Get content features of these top-rated places
-            # Ensure indexing matches place_id correctly. Assuming place_id is 1-indexed.
-            # Convert place_id to 0-indexed for DataFrame lookup if necessary: places_df.index is 0-indexed.
-            # We need to map place_id to the index of content_features_df.
-            
-            # Create a mapping from place_id to content_features_df index
+        if top_user_rated_places_ids:
             place_id_to_index = {pid: idx for idx, pid in enumerate(places_df['place_id'])}
-            
             top_rated_place_indices = [place_id_to_index[pid] for pid in top_user_rated_places_ids if pid in place_id_to_index]
             
             if top_rated_place_indices:
                 top_rated_place_content_features = content_features_df.iloc[top_rated_place_indices]
                 
-                all_content_features_np = content_features_df.to_numpy() # Convert once
+                all_content_features_np = content_features_df.to_numpy()
                 top_rated_place_content_features_np = top_rated_place_content_features.to_numpy()
 
                 similarity_scores = cosine_similarity(top_rated_place_content_features_np, all_content_features_np)
                 avg_similarity_scores = np.mean(similarity_scores, axis=0)
                 
-                # Get place_ids sorted by similarity, excluding rated ones
-                # Get the actual place_id from the original places_df based on index
                 similar_place_idx_series = pd.Series(avg_similarity_scores, index=places_df['place_id']).sort_values(ascending=False)
                 
-                # Filter out already rated places and take top_n
                 cb_recs_series = similar_place_idx_series[~similar_place_idx_series.index.isin(rated_place_ids)].head(top_n_cb)
                 
                 cb_recs_df = pd.DataFrame({
                     'place_id': cb_recs_series.index,
                     'cb_score': cb_recs_series.values
                 })
-        else: # No top rated places found for CB, e.g. if user only rated 1-star
+        else:
             print("No sufficiently top-rated places found for content-based recommendations for this user.")
-            cb_recs_df = pd.DataFrame() # Empty CB recs
+            cb_recs_df = pd.DataFrame()
             
-    else: # Cold-start, fallback to top-rated places overall (popularity)
+    else:
         print("Cold-start user: Recommending top-rated places overall for content-based fallback.")
         cb_recs_df = places_df.sort_values(by='rating', ascending=False).head(top_n_cb).copy()
-        cb_recs_df['cb_score'] = 1.0 # Assign a high score for blending, indicating high confidence in popularity
-        cb_recs_df = cb_recs_df[~cb_recs_df['place_id'].isin(rated_place_ids)] # Ensure no rated places for cold-start (though shouldn't be anyway)
+        cb_recs_df['cb_score'] = 1.0
+        cb_recs_df = cb_recs_df[~cb_recs_df['place_id'].isin(rated_place_ids)]
 
 
-    # 3. Hybridization
     final_recommendations = pd.DataFrame()
     
-    # Merge CF and CB recommendations if both exist
     if not cf_recs_df.empty and not cb_recs_df.empty:
-        # Perform a full outer join to combine all recommendations
         hybrid_df = pd.merge(cf_recs_df[['place_id', 'predicted_rating']], 
                              cb_recs_df[['place_id', 'cb_score']], 
                              on='place_id', how='outer')
         
-        # Fill NaN scores with 0 if a place was only recommended by one method
         hybrid_df['predicted_rating'] = hybrid_df['predicted_rating'].fillna(0)
         hybrid_df['cb_score'] = hybrid_df['cb_score'].fillna(0)
 
-        # Normalize CF predicted_rating to a 0-1 scale to blend with CB score
-        min_cf_rating, max_cf_rating = 1, 5 # Ratings are 1-5
+        min_cf_rating, max_cf_rating = 1, 5
         hybrid_df['predicted_rating_normalized'] = (hybrid_df['predicted_rating'] - min_cf_rating) / (max_cf_rating - min_cf_rating)
         
-        # Calculate hybrid score
         hybrid_df['hybrid_score'] = (cf_weight * hybrid_df['predicted_rating_normalized']) + \
                                     ((1 - cf_weight) * hybrid_df['cb_score'])
         
-        # Sort by hybrid score, then by original place rating (as a tie-breaker or fallback quality)
         final_recommendations = hybrid_df.sort_values(by='hybrid_score', ascending=False)
         
-    elif not cf_recs_df.empty: # Only CF recommendations available
+    elif not cf_recs_df.empty:
         final_recommendations = cf_recs_df.sort_values(by='predicted_rating', ascending=False)
-    elif not cb_recs_df.empty: # Only CB recommendations available (e.g., cold-start)
+    elif not cb_recs_df.empty:
         final_recommendations = cb_recs_df.sort_values(by='cb_score', ascending=False)
     else:
         print("No recommendations found for this user.")
-        return pd.DataFrame() # Return empty DataFrame
+        return pd.DataFrame()
 
-    # Filter out already rated places (again, to be safe, as CB/CF might include them before final merge)
     final_recommendations = final_recommendations[~final_recommendations['place_id'].isin(rated_place_ids)]
     
-    # Merge with original places_df to get full details of recommended places
     recommended_places_details = pd.merge(final_recommendations[['place_id']].head(num_recommendations), places_df, on='place_id', how='left')
 
     return recommended_places_details.head(num_recommendations)
@@ -361,15 +343,12 @@ if __name__ == "__main__":
         print("\nModel training script execution complete.")
         print("Check MLflow UI at http://localhost:5000 to see experiment runs.")
 
-        # --- NEW: Test Hybrid Recommendations ---
+        # --- Test Hybrid Recommendations ---
         print("\n--- Testing Hybrid Recommendations ---")
-        # Example: Get recommendations for a specific user (e.g., User ID 1)
         sample_user_id = 1 
         
-        # Check if user_id exists in our users_df
         if sample_user_id not in users_df_raw['user_id'].values:
             print(f"User ID {sample_user_id} not found in users_df_raw. Please choose an existing user ID.")
-            # If user does not exist, find an existing one to test
             sample_user_id = users_df_raw['user_id'].iloc[0]
             print(f"Using User ID {sample_user_id} for demonstration.")
             
@@ -380,7 +359,7 @@ if __name__ == "__main__":
             content_features_df=full_content_features_df,
             tfidf_vectorizer=tfidf_vectorizer,
             ohe_encoder=ohe_encoder,
-            ratings_df=ratings_df_raw, # <--- NEW: Pass ratings_df_raw here
+            ratings_df=ratings_df_raw, # Pass ratings_df_raw here
             num_recommendations=5
         )
 
@@ -390,7 +369,6 @@ if __name__ == "__main__":
         else:
             print(f"Could not generate recommendations for User ID {sample_user_id}.")
 
-        # Example: Test with a cold-start user ID (assuming this ID does not exist in ratings_df)
         cold_start_user_id = 9999
         print(f"\nTesting hybrid recommendations for a cold-start user (ID: {cold_start_user_id})...")
         cold_start_recs = get_hybrid_recommendations(
@@ -400,7 +378,7 @@ if __name__ == "__main__":
             content_features_df=full_content_features_df,
             tfidf_vectorizer=tfidf_vectorizer,
             ohe_encoder=ohe_encoder,
-            ratings_df=ratings_df_raw, # <--- NEW: Pass ratings_df_raw here
+            ratings_df=ratings_df_raw, # Pass ratings_df_raw here
             num_recommendations=5
         )
         if not cold_start_recs.empty:

@@ -22,18 +22,26 @@ COPY ml/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create the scripts directory
-RUN mkdir -p ml/scripts
+RUN mkdir -p ml/api ml/scripts ml/models
 
 # Copy the explore_data.py script from ml/scripts/ to /app/ml/scripts/
-COPY ml/scripts/explore_data.py ./ml/scripts/
+COPY ml/api/main.py ./ml/api/
 COPY ml/scripts/train_model.py ./ml/scripts/
+
+# Copy the trained models and feature engineering tools
+# These are saved by train_model.py to ml/models/
+COPY ml/models/ ./ml/models/
 
 # Set environment variables for database connection (runtime injection is best practice for production, but ENV for capstone utility is okay)
 ENV DB_HOST=host.docker.internal
-ENV DB_PORT=5432
-ENV DB_NAME=postgres
+ENV DB_PORT=5435
+ENV DB_NAME=deploycamp
 ENV DB_USER=postgres
+ENV MLFLOW_TRACKING_URI=http://host.docker.internal:5000
 
-# Default command to run the EDA script.
-# You can override this CMD when you run the container if you want to run other scripts.
-CMD ["python", "ml/scripts/explore_data.py"]
+# Expose the port FastAPI will run on
+EXPOSE 8000
+
+# Command to run the FastAPI application using Uvicorn
+# The command is `uvicorn <module_name>:<app_instance_name> --host <host> --port <port>`
+CMD ["uvicorn", "ml.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
