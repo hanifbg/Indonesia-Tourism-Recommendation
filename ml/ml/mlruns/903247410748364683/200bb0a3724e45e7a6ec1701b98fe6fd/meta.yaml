@@ -1,0 +1,14 @@
+artifact_uri: mlflow-artifacts:/903247410748364683/200bb0a3724e45e7a6ec1701b98fe6fd/artifacts
+end_time: 1753334626826
+entry_point_name: ''
+experiment_id: '903247410748364683'
+lifecycle_stage: active
+run_id: 200bb0a3724e45e7a6ec1701b98fe6fd
+run_name: Best_SVD_GridSearchCV_Run
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1753334626759
+status: 3
+tags: []
+user_id: root

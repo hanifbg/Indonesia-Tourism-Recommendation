@@ -16,6 +16,9 @@ from surprise import accuracy
 
 import mlflow
 import pickle
+from sklearn.metrics import ndcg_score
+import warnings
+warnings.filterwarnings('ignore')
 
 
 # Register numpy.int64 adapter for psycopg2
@@ -207,6 +210,151 @@ def train_models(trainset, testset, content_features_df, tfidf_vectorizer, ohe_e
         print("\n--- Model Training & Evaluation Completed ---")
         return cf_model # Return the trained CF model
 
+def evaluate_hybrid_system(cf_model, places_df, content_features_df, tfidf_vectorizer, ohe_encoder, ratings_df, test_users_sample=50, k_values=[5, 10, 20]):
+    """
+    Comprehensive evaluation of the hybrid recommendation system.
+    Measures Precision@K, Recall@K, NDCG@K, and Hit Rate.
+    """
+    print("\n--- Starting Hybrid System Evaluation ---")
+    
+    # Get users who have sufficient ratings for evaluation
+    user_rating_counts = ratings_df['user_id'].value_counts()
+    users_with_enough_ratings = user_rating_counts[user_rating_counts >= 5].index.tolist()
+    
+    if len(users_with_enough_ratings) < test_users_sample:
+        test_users_sample = len(users_with_enough_ratings)
+        print(f"Adjusting test sample to {test_users_sample} users (all available users with >=5 ratings)")
+    
+    # Sample users for evaluation
+    np.random.seed(42)
+    test_users = np.random.choice(users_with_enough_ratings, size=test_users_sample, replace=False)
+    
+    evaluation_results = {k: {'precision': [], 'recall': [], 'ndcg': [], 'hit_rate': []} for k in k_values}
+    
+    print(f"Evaluating hybrid recommendations for {len(test_users)} users...")
+    
+    for user_id in test_users:
+        user_ratings = ratings_df[ratings_df['user_id'] == user_id].copy()
+        
+        # Split user's ratings: use 80% for training context, 20% for testing
+        user_ratings = user_ratings.sort_values('place_rating', ascending=False)
+        n_test = max(1, len(user_ratings) // 5)  # At least 1 item for testing
+        
+        test_items = user_ratings.head(n_test)['place_id'].tolist()
+        train_items = user_ratings.tail(len(user_ratings) - n_test)['place_id'].tolist()
+        
+        # Create a modified ratings_df for this evaluation (remove test items)
+        eval_ratings_df = ratings_df[~((ratings_df['user_id'] == user_id) & 
+                                      (ratings_df['place_id'].isin(test_items)))].copy()
+        
+        # Generate hybrid recommendations
+        try:
+            recommendations = get_hybrid_recommendations(
+                user_id=user_id,
+                cf_model=cf_model,
+                places_df=places_df,
+                content_features_df=content_features_df,
+                tfidf_vectorizer=tfidf_vectorizer,
+                ohe_encoder=ohe_encoder,
+                ratings_df=eval_ratings_df,
+                num_recommendations=max(k_values)
+            )
+            
+            if recommendations.empty:
+                continue
+                
+            recommended_items = recommendations['place_id'].tolist()
+            
+            # Calculate metrics for each K
+            for k in k_values:
+                top_k_recommendations = recommended_items[:k]
+                
+                # Precision@K
+                hits = len(set(top_k_recommendations) & set(test_items))
+                precision_k = hits / k if k > 0 else 0
+                
+                # Recall@K
+                recall_k = hits / len(test_items) if len(test_items) > 0 else 0
+                
+                # Hit Rate@K (binary: did we hit at least one relevant item?)
+                hit_rate_k = 1 if hits > 0 else 0
+                
+                # NDCG@K (simplified version)
+                # Create relevance scores: 1 for test items, 0 for others
+                relevance_scores = [1 if item in test_items else 0 for item in top_k_recommendations]
+                if sum(relevance_scores) > 0 and len(relevance_scores) > 0:
+                    # Ideal ranking (all relevant items first)
+                    ideal_relevance = sorted(relevance_scores, reverse=True)
+                    ndcg_k = ndcg_score([ideal_relevance], [relevance_scores], k=k)
+                else:
+                    ndcg_k = 0.0
+                
+                evaluation_results[k]['precision'].append(precision_k)
+                evaluation_results[k]['recall'].append(recall_k)
+                evaluation_results[k]['ndcg'].append(ndcg_k)
+                evaluation_results[k]['hit_rate'].append(hit_rate_k)
+                
+        except Exception as e:
+            print(f"Error evaluating user {user_id}: {e}")
+            continue
+    
+    # Calculate average metrics
+    avg_metrics = {}
+    for k in k_values:
+        if evaluation_results[k]['precision']:  # Check if we have any results
+            avg_metrics[f'precision_at_{k}'] = np.mean(evaluation_results[k]['precision'])
+            avg_metrics[f'recall_at_{k}'] = np.mean(evaluation_results[k]['recall'])
+            avg_metrics[f'ndcg_at_{k}'] = np.mean(evaluation_results[k]['ndcg'])
+            avg_metrics[f'hit_rate_at_{k}'] = np.mean(evaluation_results[k]['hit_rate'])
+        else:
+            avg_metrics[f'precision_at_{k}'] = 0.0
+            avg_metrics[f'recall_at_{k}'] = 0.0
+            avg_metrics[f'ndcg_at_{k}'] = 0.0
+            avg_metrics[f'hit_rate_at_{k}'] = 0.0
+    
+    # Calculate overall hybrid system accuracy
+    overall_precision = np.mean([avg_metrics[f'precision_at_{k}'] for k in k_values])
+    overall_recall = np.mean([avg_metrics[f'recall_at_{k}'] for k in k_values])
+    overall_ndcg = np.mean([avg_metrics[f'ndcg_at_{k}'] for k in k_values])
+    overall_hit_rate = np.mean([avg_metrics[f'hit_rate_at_{k}'] for k in k_values])
+    
+    # F1 Score (harmonic mean of precision and recall)
+    if overall_precision + overall_recall > 0:
+        f1_score = 2 * (overall_precision * overall_recall) / (overall_precision + overall_recall)
+    else:
+        f1_score = 0.0
+    
+    avg_metrics['overall_precision'] = overall_precision
+    avg_metrics['overall_recall'] = overall_recall
+    avg_metrics['overall_ndcg'] = overall_ndcg
+    avg_metrics['overall_hit_rate'] = overall_hit_rate
+    avg_metrics['overall_f1_score'] = f1_score
+    
+    # Convert to percentage for easier interpretation
+    hybrid_accuracy_percent = f1_score * 100
+    avg_metrics['hybrid_system_accuracy_percent'] = hybrid_accuracy_percent
+    
+    print("\n=== HYBRID RECOMMENDATION SYSTEM EVALUATION RESULTS ===")
+    print(f"Evaluated on {len(test_users)} users")
+    print("\n--- Detailed Metrics by K ---")
+    for k in k_values:
+        print(f"\nK={k}:")
+        print(f"  Precision@{k}: {avg_metrics[f'precision_at_{k}']:.4f} ({avg_metrics[f'precision_at_{k}']*100:.2f}%)")
+        print(f"  Recall@{k}: {avg_metrics[f'recall_at_{k}']:.4f} ({avg_metrics[f'recall_at_{k}']*100:.2f}%)")
+        print(f"  NDCG@{k}: {avg_metrics[f'ndcg_at_{k}']:.4f} ({avg_metrics[f'ndcg_at_{k}']*100:.2f}%)")
+        print(f"  Hit Rate@{k}: {avg_metrics[f'hit_rate_at_{k}']:.4f} ({avg_metrics[f'hit_rate_at_{k}']*100:.2f}%)")
+    
+    print("\n--- Overall Hybrid System Performance ---")
+    print(f"Overall Precision: {overall_precision:.4f} ({overall_precision*100:.2f}%)")
+    print(f"Overall Recall: {overall_recall:.4f} ({overall_recall*100:.2f}%)")
+    print(f"Overall NDCG: {overall_ndcg:.4f} ({overall_ndcg*100:.2f}%)")
+    print(f"Overall Hit Rate: {overall_hit_rate:.4f} ({overall_hit_rate*100:.2f}%)")
+    print(f"Overall F1-Score: {f1_score:.4f} ({f1_score*100:.2f}%)")
+    print(f"\n🎯 HYBRID SYSTEM ACCURACY: {hybrid_accuracy_percent:.2f}%")
+    
+    print("\n--- Hybrid System Evaluation Completed ---")
+    return avg_metrics
+
 # --- Hybrid Recommendation Logic Function ---
 # (No changes needed in this function for the current error, copied as is)
 def get_hybrid_recommendations(
@@ -339,6 +487,30 @@ if __name__ == "__main__":
             tfidf_vectorizer,
             ohe_encoder
         )
+
+        # --- Evaluate Hybrid Recommendation System ---
+        print("\n" + "="*60)
+        print("COMPREHENSIVE HYBRID SYSTEM EVALUATION")
+        print("="*60)
+        
+        # Start a new MLflow run for hybrid evaluation
+        with mlflow.start_run(run_name="Hybrid_System_Evaluation"):
+            hybrid_metrics = evaluate_hybrid_system(
+                cf_model=trained_cf_model,
+                places_df=places_df_raw,
+                content_features_df=full_content_features_df,
+                tfidf_vectorizer=tfidf_vectorizer,
+                ohe_encoder=ohe_encoder,
+                ratings_df=ratings_df_raw,
+                test_users_sample=50,  # Adjust based on your dataset size
+                k_values=[5, 10, 20]
+            )
+            
+            # Log all hybrid metrics to MLflow
+            for metric_name, metric_value in hybrid_metrics.items():
+                mlflow.log_metric(f"hybrid_{metric_name}", round(metric_value, 4))
+            
+            print(f"\n✅ Hybrid evaluation metrics logged to MLflow.")
 
         print("\nModel training script execution complete.")
         print("Check MLflow UI at http://localhost:5000 to see experiment runs.")
