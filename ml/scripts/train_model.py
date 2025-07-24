@@ -13,6 +13,7 @@ from surprise import Dataset, Reader
 from surprise.model_selection import train_test_split as surprise_train_test_split
 from surprise import SVD
 from surprise import accuracy
+from surprise.model_selection import GridSearchCV
 
 import mlflow
 import pickle
@@ -136,15 +137,17 @@ def split_data(places_df, content_features_df, ratings_df):
     reader = Reader(rating_scale=(1, 5))
     data = Dataset.load_from_df(ratings_df[['user_id', 'place_id', 'place_rating']], reader)
     
+    # We use a full dataset for GridSearchCV's cross_validate, it does its own internal splits.
+    # So, for the final evaluation of the BEST model, we'll use a separate train/test split.
     trainset, testset = surprise_train_test_split(data, test_size=0.2, random_state=42)
     
     print(f"Collaborative Filtering Trainset Size: {trainset.n_ratings} interactions") 
     print(f"Collaborative Filtering Testset Size: {len(testset)} interactions")
 
     print("\n--- Data Splitting Completed ---")
-    return trainset, testset, places_df, content_features_df
+    return trainset, testset, places_df, content_features_df, data
 
-def train_models(trainset, testset, content_features_df, tfidf_vectorizer, ohe_encoder):
+def train_models(trainset, testset, content_features_df, tfidf_vectorizer, ohe_encoder, full_suprise_data):
     """Trains the Collaborative Filtering model and evaluates it, logging to MLflow."""
     print("\n--- Starting Model Training ---")
 
@@ -156,36 +159,82 @@ def train_models(trainset, testset, content_features_df, tfidf_vectorizer, ohe_e
 
     mlflow.set_experiment("Tourism Recommendation System")
     with mlflow.start_run(run_name="SVD_CF_Model_Training"):
-        # Log parameters
-        mlflow.log_param("cf_model_type", "SVD")
-        mlflow.log_param("surprise_test_size", 0.2)
-        mlflow.log_param("surprise_random_state", 42)
+        # --- NEW: Hyperparameter Tuning for SVD ---
+        print("\n--- Starting SVD Hyperparameter Tuning (GridSearchCV) ---")
         
-        # --- Train Collaborative Filtering Model (SVD) ---
-        print("Training Collaborative Filtering (SVD) model...")
-        cf_model = SVD(random_state=42)
+        
+        param_grid = {
+            'n_factors': [10, 100, 500],
+            'n_epochs': [5, 20, 50], 
+            'lr_all': [0.001, 0.005, 0.02],
+            'reg_all': [0.005, 0.02, 0.1] 
+        }
+        
+        # Use GridSearchCV with 3-fold cross-validation
+        # We'll optimize for RMSE.
+        gs = GridSearchCV(SVD, param_grid, measures=['rmse', 'mae'], cv=3, n_jobs=-1)
+        
+        # Fit GridSearchCV on the FULL data object (not just trainset, as GridSearchCV handles splits)
+        gs.fit(full_surprise_data) # Use the full 'data' object returned from split_data
+
+        # Get the best RMSE score and parameters
+        best_rmse_score = gs.best_score['rmse']
+        best_mae_score = gs.best_score['mae']
+        best_params = gs.best_params['rmse'] # Get params that yielded best RMSE
+
+        print(f"Best SVD RMSE from GridSearchCV: {best_rmse_score:.4f}")
+        print(f"Best SVD MAE from GridSearchCV: {best_mae_score:.4f}")
+        print(f"Best SVD Parameters: {best_params}")
+
+        # Log best parameters and scores from GridSearchCV to MLflow
+        with mlflow.start_run(nested=True, run_name="Best_SVD_GridSearchCV_Run"): # NEW: Nested run
+            for param, value in best_params.items():
+                mlflow.log_param(f"best_svd_{param}", value)
+            mlflow.log_metric("best_svd_rmse_cv", best_rmse_score)
+            mlflow.log_metric("best_svd_mae_cv", best_mae_score)
+            print("GridSearchCV results logged to MLflow.")
+        
+        print("\n--- SVD Hyperparameter Tuning Completed ---")
+        
+        # --- Train Collaborative Filtering Model (SVD) with Best Parameters ---
+        # Now, train the final CF model using the best parameters found by GridSearchCV
+        print("\nTraining Final Collaborative Filtering (SVD) model with best parameters...")
+        cf_model = SVD(
+            n_factors=best_params['n_factors'],
+            n_epochs=best_params['n_epochs'],
+            lr_all=best_params['lr_all'],
+            reg_all=best_params['reg_all'],
+            random_state=42 # Still maintain random_state for reproducibility
+        )
         cf_model.fit(trainset)
-        print("Collaborative Filtering (SVD) model trained.")
+        print("Final Collaborative Filtering (SVD) model trained with best parameters.")
 
         # --- Evaluate Collaborative Filtering Model ---
-        print("Evaluating Collaborative Filtering model...")
+        print("Evaluating Final Collaborative Filtering model on testset...")
         predictions = cf_model.test(testset)
         
         rmse = accuracy.rmse(predictions, verbose=False)
         mae = accuracy.mae(predictions, verbose=False)
         
-        print(f"Collaborative Filtering Model RMSE: {rmse}")
-        print(f"Collaborative Filtering Model MAE: {mae}")
+        print(f"Final Collaborative Filtering Model RMSE on Testset: {rmse:.4f}")
+        print(f"Final Collaborative Filtering Model MAE on Testset: {mae:.4f}")
 
-        # Log metrics to MLflow
-        mlflow.log_metric("cf_rmse", rmse)
-        mlflow.log_metric("cf_mae", mae)
+         # Calculate Accuracy Percentage for RMSE and MAE
+        rating_range = 5 - 1 # Max rating - Min rating
+        accuracy_rmse_percent = (1 - (rmse / rating_range)) * 100
+        accuracy_mae_percent = (1 - (mae / rating_range)) * 100
+        print(f"Final CF Model Accuracy (based on RMSE): {accuracy_rmse_percent:.2f}%")
+        print(f"Final CF Model Accuracy (based on MAE): {accuracy_mae_percent:.2f}%")
+
+        # Log final test metrics and accuracy percentage to MLflow (parent run)
+        mlflow.log_metric("final_cf_rmse_test", round(rmse, 4))
+        mlflow.log_metric("final_cf_mae_test", round(mae, 4))
+        mlflow.log_metric("final_cf_accuracy_rmse_percent", round(accuracy_rmse_percent, 2))
+        mlflow.log_metric("final_cf_accuracy_mae_percent", round(accuracy_mae_percent, 2))
 
         # Log the trained CF model as a pickle artifact to MLflow and a fixed local path
         print("Logging CF model to MLflow and saving to ml/models/...")
-        cf_model_local_path = os.path.join(models_dir, "cf_model.pkl") # Use os.path.join for robustness
-        # os.makedirs(os.path.dirname(cf_model_local_path), exist_ok=True) # This is now handled by the early os.makedirs
-
+        cf_model_local_path = os.path.join(models_dir, "cf_model.pkl") 
         with open(cf_model_local_path, "wb") as f:
             pickle.dump(cf_model, f)
         mlflow.log_artifact(cf_model_local_path, "cf_model_artifact")
@@ -476,7 +525,7 @@ if __name__ == "__main__":
             places_df_raw.copy(), users_df_raw.copy(), ratings_df_raw.copy()
         )
 
-        cf_trainset, cf_testset, full_places_df, full_content_features_df = split_data(
+        cf_trainset, cf_testset, full_places_df, full_content_features_df, full_surprise_data = split_data(
             places_df_raw, content_features_df, ratings_df_raw.copy()
         )
 
@@ -485,7 +534,8 @@ if __name__ == "__main__":
             cf_testset, 
             full_content_features_df,
             tfidf_vectorizer,
-            ohe_encoder
+            ohe_encoder,
+            full_surprise_data
         )
 
         # --- Evaluate Hybrid Recommendation System ---
