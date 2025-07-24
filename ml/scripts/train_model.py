@@ -426,18 +426,30 @@ def evaluate_hybrid_system(cf_model, places_df, content_features_df, tfidf_vecto
 
 # --- Hybrid Recommendation Logic Function ---
 # (No changes needed in this function for the current error, copied as is)
-def calculate_dynamic_cf_weight(num_ratings: int, min_ratings: int = 5, max_ratings: int = 50) -> float:
+def calculate_dynamic_cf_weight(user_ratings_for_cf: pd.DataFrame, min_ratings: int = 5, max_ratings: int = 50) -> float:
     """
-    Calculate dynamic CF weight based on user's rating count.
+    Calculate dynamic CF weight based on user's rating count and rating variance.
     Users with more ratings get higher CF weight, users with fewer ratings get lower CF weight.
+    Users with consistent preferences (low variance) get additional CF weight boost.
     """
+    num_ratings = len(user_ratings_for_cf)
+    
     if num_ratings == 0:
         return 0.0  # Cold start users
     elif num_ratings >= max_ratings:
-        return 0.8  # High CF weight for experienced users
+        cf_weight = 0.8  # High CF weight for experienced users
     else:
         # Linear interpolation between 0.3 and 0.8
-        return 0.3 + (0.5 * (num_ratings / max_ratings))
+        cf_weight = 0.3 + (0.5 * (num_ratings / max_ratings))
+    
+    # Also consider user's rating variance for preference consistency
+    if num_ratings > 1:
+        rating_variance = user_ratings_for_cf['place_rating'].var()
+        if rating_variance < 0.5:  # User has consistent preferences
+            cf_weight += 0.1  # Increase CF weight
+            cf_weight = min(cf_weight, 0.9)  # Cap at 0.9
+    
+    return cf_weight
 
 def get_hybrid_recommendations(
     user_id: int, 
@@ -464,7 +476,7 @@ def get_hybrid_recommendations(
     
     # Calculate dynamic CF weight if not provided
     if cf_weight is None:
-        cf_weight = calculate_dynamic_cf_weight(len(user_ratings_for_cf))
+        cf_weight = calculate_dynamic_cf_weight(user_ratings_for_cf)
         print(f"Dynamic CF weight calculated: {cf_weight:.3f} (based on {len(user_ratings_for_cf)} ratings)")
     
     unrated_places = places_df[~places_df['place_id'].isin(rated_place_ids)]
