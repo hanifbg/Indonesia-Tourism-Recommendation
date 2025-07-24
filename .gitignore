@@ -46,3 +46,6 @@ node_modules/
 dist/
 build/
 .parcel-cache/
+
+#misc
+TODO_PROJECT_PLAN.md
