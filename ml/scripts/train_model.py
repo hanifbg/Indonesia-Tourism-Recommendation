@@ -4,6 +4,7 @@ import pandas as pd
 import psycopg2
 import os
 import numpy as np
+import re
 from psycopg2.extensions import register_adapter, AsIs
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import OneHotEncoder
@@ -106,12 +107,29 @@ def load_data_from_db(conn):
     
     return df_places, df_users, df_ratings
 
+def clean_text(text):
+    """Clean and preprocess text data."""
+    # Remove special characters and digits
+    text = re.sub(r'[^a-zA-Z\s]', '', str(text))
+    # Convert to lowercase
+    text = text.lower()
+    # Remove extra whitespace
+    text = ' '.join(text.split())
+    return text
+
 def perform_feature_engineering(places_df, users_df, ratings_df):
     """Performs feature engineering steps."""
     print("\n--- Starting Feature Engineering ---")
 
-    places_df['combined_text'] = places_df['place_name'] + " " + places_df['description']
-    tfidf_vectorizer = TfidfVectorizer(stop_words='english', min_df=3)
+    places_df['combined_text'] = (places_df['place_name'] + " " + places_df['description']).apply(clean_text)
+    tfidf_vectorizer = TfidfVectorizer(
+        stop_words='english',
+        min_df=2,
+        max_df=0.8,
+        ngram_range=(1, 2),  # Include bigrams
+        max_features=5000,
+        sublinear_tf=True
+    )
     tfidf_matrix = tfidf_vectorizer.fit_transform(places_df['combined_text'])
     tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out(), index=places_df.index)
     
@@ -164,10 +182,12 @@ def train_models(trainset, testset, content_features_df, tfidf_vectorizer, ohe_e
         
         
         param_grid = {
-            'n_factors': [10, 100, 500],
-            'n_epochs': [5, 20, 50], 
-            'lr_all': [0.001, 0.005, 0.02],
-            'reg_all': [0.005, 0.02, 0.1] 
+            'n_factors': [50, 100, 200, 300],
+            'n_epochs': [20, 50, 100],
+            'lr_all': [0.002, 0.005, 0.01, 0.02],
+            'reg_all': [0.01, 0.02, 0.05, 0.1],
+            'init_mean': [0, 0.1],
+            'init_std_dev': [0.1, 0.2]
         }
         
         # Use GridSearchCV with 3-fold cross-validation
@@ -406,6 +426,19 @@ def evaluate_hybrid_system(cf_model, places_df, content_features_df, tfidf_vecto
 
 # --- Hybrid Recommendation Logic Function ---
 # (No changes needed in this function for the current error, copied as is)
+def calculate_dynamic_cf_weight(num_ratings: int, min_ratings: int = 5, max_ratings: int = 50) -> float:
+    """
+    Calculate dynamic CF weight based on user's rating count.
+    Users with more ratings get higher CF weight, users with fewer ratings get lower CF weight.
+    """
+    if num_ratings == 0:
+        return 0.0  # Cold start users
+    elif num_ratings >= max_ratings:
+        return 0.8  # High CF weight for experienced users
+    else:
+        # Linear interpolation between 0.3 and 0.8
+        return 0.3 + (0.5 * (num_ratings / max_ratings))
+
 def get_hybrid_recommendations(
     user_id: int, 
     cf_model, 
@@ -417,7 +450,7 @@ def get_hybrid_recommendations(
     num_recommendations: int = 10,
     top_n_cf: int = 20,
     top_n_cb: int = 20,
-    cf_weight: float = 0.7
+    cf_weight: float = None  # Will be calculated dynamically if None
 ) -> pd.DataFrame:
     """
     Generates hybrid recommendations for a given user ID.
@@ -428,6 +461,11 @@ def get_hybrid_recommendations(
 
     user_ratings_for_cf = ratings_df[ratings_df['user_id'] == user_id]
     rated_place_ids = user_ratings_for_cf['place_id'].tolist()
+    
+    # Calculate dynamic CF weight if not provided
+    if cf_weight is None:
+        cf_weight = calculate_dynamic_cf_weight(len(user_ratings_for_cf))
+        print(f"Dynamic CF weight calculated: {cf_weight:.3f} (based on {len(user_ratings_for_cf)} ratings)")
     
     unrated_places = places_df[~places_df['place_id'].isin(rated_place_ids)]
     
