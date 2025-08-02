@@ -21,4 +21,5 @@ func (a *ApiWrapper) registerRouter(e *echo.Echo) {
 	group := e.Group("/api/v1")
 	// group.GET("/place", a.GetAllPlaces)
 	group.GET("/place/:id", a.GetPlaceById)
+	group.GET("/place/recommendation", a.GetRecommendations)
 }

@@ -1,8 +1,7 @@
-package service
+package repository
 
 import "github.com/hanifbg/IndonesiaTourismDestination/internal/model/entity"
 
-type PlaceService interface {
-	GetPlaceByID(id int) (*entity.Place, error)
+type MLAPIRepository interface {
 	GetRecommendations(request *entity.RecommendationRequestML) (entity.RecommendationResponseML, error)
 }

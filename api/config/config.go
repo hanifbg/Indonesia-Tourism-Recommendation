@@ -47,6 +47,14 @@ func initConfig() (*AppConfig, error) {
 	viper.SetConfigName("app.config")
 	viper.SetConfigType("json")
 	err := viper.ReadInConfig()
+
+	finalConfig.AppPort = viper.GetInt("server.port")
+	finalConfig.DbHost = viper.GetString("database.host")
+	finalConfig.DbPort = viper.GetInt("database.port")
+	finalConfig.DbUser = viper.GetString("database.username")
+	finalConfig.DbPassword = viper.GetString("database.password")
+	finalConfig.DbName = viper.GetString("database.dbname")
+	finalConfig.DbSSLMode = viper.GetString("database.sslmode")
 	if err != nil {
 		return nil, err
 	}

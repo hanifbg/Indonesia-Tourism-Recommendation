@@ -1,6 +1,8 @@
 package postgres
 
-import "github.com/hanifbg/IndonesiaTourismDestination/internal/model/entity"
+import (
+	"github.com/hanifbg/IndonesiaTourismDestination/internal/model/entity"
+)
 
 func (r *RepoDatabase) GetAllPlaces() ([]entity.Place, error) {
 	var places []entity.Place
@@ -13,7 +15,8 @@ func (r *RepoDatabase) GetAllPlaces() ([]entity.Place, error) {
 
 func (r *RepoDatabase) GetByID(id int) (*entity.Place, error) {
 	var place entity.Place
-	err := r.DB.First(&place, id).Error
+	tx := r.DB.Raw("SELECT place_id, place_name, description, category, city, price, rating, time_minutes, coordinate, lat, long FROM places WHERE place_id = $1", id)
+	err := tx.Scan(&place).Error
 	if err != nil {
 		return nil, err
 	}

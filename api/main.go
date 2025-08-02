@@ -59,6 +59,11 @@ func main() {
 		AllowCredentials: true,
 	}))
 
+	// --- health check ---
+	e.GET("/health", func(c echo.Context) error {
+		return c.String(http.StatusOK, "Go API is healthy!")
+	})
+
 	// Initialize handlers
 	handlerInit.InitHandler(cfg, e, serv)
 

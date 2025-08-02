@@ -9,9 +9,9 @@ type Place struct {
 	Description string  `json:"description"`
 	Category    string  `json:"category"`
 	City        string  `json:"city"`
-	Price       int     `json:"price"`
+	Price       float64 `json:"price"`
 	Rating      float64 `json:"rating"`
-	TimeMinutes int     `json:"time_minutes"`
+	TimeMinutes float64 `json:"time_minutes"`
 	Coordinate  string  `json:"coordinate"` // Stored as string, as Lat/Long are separate
 	Lat         float64 `json:"lat"`
 	Long        float64 `json:"long"`
