@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tourism Recommender</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <header>
+        <h1>Indonesian Tourism Recommender</h1>
+        <p>Get personalized recommendations based on your past ratings.</p>
+    </header>
+
+    <main>
+        <section class="controls">
+            <label for="userIdInput">Enter your User ID:</label>
+            <input type="number" id="userIdInput" value="1" placeholder="e.g., 1">
+            <button id="getRecsBtn">Get recommendations</button>
+        </section>
+
+        <section id="recommendations-list">
+            <h2>Your Top recommendations</h2>
+            <div id="recommendations-container" class="grid-container">
+                <p class="placeholder-text">Click "Get recommendations" to see your personalized list!</p>
+            </div>
+        </section>
+
+        <section id="place-details" style="display: none;">
+            <button id="backToRecsBtn">Back to recommendations</button>
+            <h2>Place Details</h2>
+            <div id="place-details-container" class="card">
+                </div>
+        </section>
+    </main>
+
+    <script>
+        // Go API URL (running locally)
+        const goApiBaseUrl = 'http://localhost:8081/api/v1';
+
+        document.getElementById('getRecsBtn').addEventListener('click', () => {
+            const userId = document.getElementById('userIdInput').value;
+            if (userId) {
+                fetchrecommendations(userId);
+            } else {
+                alert('Please enter a User ID.');
+            }
+        });
+
+        document.getElementById('backToRecsBtn').addEventListener('click', () => {
+            document.getElementById('recommendations-list').style.display = 'block';
+            document.getElementById('place-details').style.display = 'none';
+        });
+
+        // Function to fetch recommendations from the Go API
+        async function fetchrecommendations(userId) {
+            document.getElementById('recommendations-container').innerHTML = '<p class="loading">Loading recommendations...</p>';
+            try {
+                const response = await fetch(`${goApiBaseUrl}/place/recommendations?user_id=${userId}&limit=10`);
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to fetch recommendations');
+                }
+                const recommendations = await response.json();
+                displayrecommendations(recommendations);
+            } catch (error) {
+                document.getElementById('recommendations-container').innerHTML = `<p class="error">Error: ${error.message}</p>`;
+                console.error('Error fetching recommendations:', error);
+            }
+        }
+
+        // Function to display the list of recommendations
+        function displayrecommendations(recommendations) {
+            const container = document.getElementById('recommendations-container');
+            container.innerHTML = ''; // Clear previous content
+
+            if (recommendations.length === 0) {
+                container.innerHTML = '<p>No recommendations found for this user.</p>';
+                return;
+            }
+
+            recommendations.forEach(place => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+                    <h3>${place.place_name}</h3>
+                    <p><strong>Category:</strong> ${place.category}</p>
+                    <p><strong>City:</strong> ${place.city}</p>
+                    <p><strong>Rating:</strong> ${place.rating}</p>
+                    <button onclick="fetchPlaceDetails(${place.place_id})">View Details</button>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // Function to fetch details for a single place
+        async function fetchPlaceDetails(placeId) {
+            document.getElementById('recommendations-list').style.display = 'none';
+            document.getElementById('place-details').style.display = 'block';
+            document.getElementById('place-details-container').innerHTML = '<p class="loading">Loading place details...</p>';
+
+            try {
+                const response = await fetch(`${goApiBaseUrl}/place/${placeId}`);
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to fetch place details');
+                }
+                const place = await response.json();
+                displayPlaceDetails(place);
+            } catch (error) {
+                document.getElementById('place-details-container').innerHTML = `<p class="error">Error: ${error.message}</p>`;
+                console.error('Error fetching place details:', error);
+            }
+        }
+
+        // Function to display details for a single place
+        function displayPlaceDetails(place) {
+            const container = document.getElementById('place-details-container');
+            container.innerHTML = `
+                <h3>${place.place_name}</h3>
+                <p><strong>Description:</strong> ${place.description}</p>
+                <p><strong>Category:</strong> ${place.category}</p>
+                <p><strong>City:</strong> ${place.city}</p>
+                <p><strong>Price:</strong> Rp ${place.price.toLocaleString()}</p>
+                <p><strong>Rating:</strong> ${place.rating}</p>
+                <p><strong>Estimated Visit Time:</strong> ${place.time_minutes} minutes</p>
+                <p><strong>Coordinates:</strong> Lat ${place.lat}, Long ${place.long}</p>
+                `;
+        }
+    </script>
+</body>
+</html>

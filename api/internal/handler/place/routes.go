@@ -18,8 +18,8 @@ func InitRoute(e *echo.Echo, servWrapper *util.ServiceWrapper) {
 }
 
 func (a *ApiWrapper) registerRouter(e *echo.Echo) {
-	group := e.Group("/api/v1")
+	group := e.Group("/api/v1/place")
 	// group.GET("/place", a.GetAllPlaces)
-	group.GET("/place/:id", a.GetPlaceById)
-	group.GET("/place/recommendation", a.GetRecommendations)
+	group.GET("/:id", a.GetPlaceById)
+	group.GET("/recommendations", a.GetRecommendations)
 }
