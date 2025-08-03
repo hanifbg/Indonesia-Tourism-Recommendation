@@ -76,10 +76,10 @@ def main():
         )
         print("Database connection successful.")
 
-        truncate_table(conn, 'ratings')
-        truncate_table(conn, 'users')
-        truncate_table(conn, 'places')
-        print("All tables truncated for a fresh start.")
+        # truncate_table(conn, 'ratings')
+        # truncate_table(conn, 'users')
+        # truncate_table(conn, 'places')
+        # print("All tables truncated for a fresh start.")
 
         print(f"Loading {TOURISM_DATA_CSV}...")
         df_tourism = pd.read_csv(TOURISM_DATA_CSV)

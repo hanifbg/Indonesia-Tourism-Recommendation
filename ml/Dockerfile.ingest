@@ -1,7 +1,17 @@
 # Dockerfile for data ingestion script
 
 # Use a slim Python image for smaller size
-FROM python:3.10-slim-buster
+FROM python:3.11-slim-bookworm
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    python3-dev \
+    libffi-dev \
+    libssl-dev \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory in the container
 WORKDIR /app
@@ -24,8 +34,9 @@ COPY ml/data/ ./ml/data/
 # your Docker network to resolve the host. 'localhost' might work if network is 'host'.
 ENV DB_HOST=host.docker.internal
 ENV DB_PORT=5432
-ENV DB_NAME=postgres
+ENV DB_NAME=deploycamp
 ENV DB_USER=postgres
+ENV DB_PASSWORD=1
 
 # Command to run the Python script when the container starts
 CMD ["python", "ml/scripts/ingest-data.py"]

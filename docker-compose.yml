@@ -1,0 +1,152 @@
+# your-capstone-project/docker-compose.yml
+
+version: '3.8'
+
+services:
+
+  # 1. PostgreSQL Database Service
+  postgres:
+    image: postgres:17
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "1" # Use your actual password
+      POSTGRES_DB: deploycamp
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5435:5432" # Host port 5435 -> container's internal port 5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. MLflow Tracking Server
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    restart: always
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - mlflow-data:/mlruns
+    ports:
+      - "5000:5000"
+    command: mlflow server --backend-store-uri file:///mlruns --host 0.0.0.0 --port 5000 --serve-artifacts --workers 1    
+    healthcheck: # <--- NEW: More robust Health check for MLflow service
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. Data Ingestion Service (Runs once, then exits)
+  data-ingester:
+    build:
+      context: .
+      dockerfile: ml/Dockerfile.ingest
+    restart: "no" # This is a one-off job, do not restart
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: deploycamp
+      DB_USER: postgres
+      DB_PASSWORD: "1" # Use your actual password
+    volumes:
+      - ./ml/data:/app/ml/data # Mount data volume for script to access CSVs
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+# 4. Model Training Service (Runs once after ingestion, saves models)
+  ml-training:
+    build:
+      context: .
+      dockerfile: ml/Dockerfile.ml # Use our existing ML Dockerfile
+    restart: "no"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: deploycamp
+      DB_USER: postgres
+      DB_PASSWORD: "1"
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./ml/models/:/app/ml/models/ # Mount models for saving artifacts
+    depends_on:
+      mlflow:
+        condition: service_started
+      data-ingester:
+        condition: service_completed_successfully
+    command: python ml/scripts/train_model.py
+
+  # 5. Python ML Inference Service (FastAPI)
+  ml-inference-service:
+    build:
+      context: .
+      dockerfile: ml/Dockerfile.ml_inference
+    restart: always
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: deploycamp
+      DB_USER: postgres
+      DB_PASSWORD: "1" # Use your actual password
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./ml/models/:/app/ml/models/ # Mount models for loading
+    ports:
+      - "8000:8000"
+    depends_on:
+      data-ingester: # NEW: Depends on data-ingester to be completed
+        condition: service_completed_successfully
+      mlflow:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 6. Go API Service (Echo)
+  go-api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      DB_HOST_GO: postgres
+      DB_PORT_GO: 5432
+      DB_NAME_GO: deploycamp
+      DB_USER_GO: postgres
+      DB_PASSWORD_GO: "1" # Use your actual password
+      ML_API_HOST: ml-inference-service
+      ML_API_PORT: 8000
+    ports:
+      - "8080:8080"
+    depends_on:
+      data-ingester: # NEW: Depends on data-ingester to be completed
+        condition: service_completed_successfully
+      ml-inference-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 7. Frontend Service (Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    restart: always
+    depends_on:
+      go-api:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  mlflow-data:

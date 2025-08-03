@@ -1,6 +1,7 @@
 package place
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -16,6 +17,7 @@ func (a *ApiWrapper) GetPlaceById(c echo.Context) error {
 	}
 
 	place, err := a.PlaceService.GetPlaceByID(id)
+	fmt.Println(err)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"message": "Internal server error",
@@ -50,6 +52,7 @@ func (a *ApiWrapper) GetRecommendations(c echo.Context) error {
 	request.UserID = userID
 	request.NumRecommendations = limit
 	response, err := a.PlaceService.GetRecommendations(&request)
+	fmt.Println(err)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"message": "Internal server error",

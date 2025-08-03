@@ -68,7 +68,7 @@ func main() {
 	handlerInit.InitHandler(cfg, e, serv)
 
 	// Start server
-	serverAddr := "localhost:8081"
+	serverAddr := "localhost:8080"
 	if cfg.AppPort != 0 {
 		serverAddr = fmt.Sprintf(":%d", cfg.AppPort)
 	}

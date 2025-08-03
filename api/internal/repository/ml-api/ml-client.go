@@ -12,7 +12,7 @@ import (
 )
 
 func (c *MLApiClient) GetRecommendations(request *entity.RecommendationRequestML) (entity.RecommendationResponseML, error) {
-	requestURL := fmt.Sprintf("http://localhost:8000/recommend")
+	requestURL := fmt.Sprintf("http://%s:%d/recommend", c.Config.MLApiHost, c.Config.MLApiPort)
 
 	jsonBody, err := json.Marshal(request)
 	if err != nil {
