@@ -11,7 +11,7 @@ The development process adheres to MLOps best practices, emphasizing reproducibi
 2.  **Independent Problem Solving:** Demonstrate the ability to tackle complex technical challenges inherent in ML system development.
 3.  **Professional Portfolio Development:** Create a demonstrable project showcasing expertise in machine learning and MLOps.
 
-## 2. Current Progress: Data Foundation & Core ML Model Development
+## 2. Data Foundation & Core ML Model Development
 
 This project has successfully established its data foundation, completed comprehensive data analysis, engineered features, and developed and trained the core hybrid machine learning model, integrated with MLflow.
 
@@ -88,52 +88,129 @@ This project has successfully established its data foundation, completed compreh
             * **Artifact Logging:** Saves and logs the trained CF model (`cf_model.pkl`), the TF-IDF vectorizer (`tfidf_vectorizer.pkl`), and the One-Hot Encoder (`ohe_encoder.pkl`) as artifacts within the MLflow run. This ensures that the exact components used for a specific model version are easily retrievable for inference or further analysis.
     * **MLflow UI:** The MLflow Tracking server runs locally (`http://localhost:5000`), allowing real-time visualization of all experiment runs, their parameters, metrics, and stored artifacts.
 
-## 3. How to Run the Current Setup
+## 3. API Development & Integration
 
-To replicate the current data setup and run the ML model development pipeline, ensure you have Docker Desktop installed and running.
+**Objective:** To develop a robust API layer that serves as the interface between clients and the recommendation system, integrating the ML inference service with a comprehensive backend API.
 
-1.  **Navigate to your project root directory** (e.g., `your-capstone-project/`).
-2.  **Start your PostgreSQL Docker container:**
-    ```bash
-    docker run --name deploycamp -e POSTGRES_PASSWORD=password -p 5432:5432 -d postgres:17
-    # Adjust password and container name if different from your setup.
-    ```
-3.  **Create the Database and Tables:** If you haven't yet, connect to your PostgreSQL instance and run the `CREATE DATABASE` and `CREATE TABLE` SQL commands.
-4.  **Run the Data Ingestion Script:**
-    * Build the `data-ingester` Docker image:
-        ```bash
-        docker build -t data-ingester -f ml/Dockerfile.ingest .
-        ```
-    * Execute the data ingestion:
-        ```bash
-        docker run -e DB_PASSWORD=password data-ingester # Use your actual DB password.
-        ```
-5.  **Start the MLflow Tracking Server:**
-    * Create MLflow data directory: `mkdir -p ml/mlruns`
-    * Run the MLflow UI (from your host terminal, not Docker):
-        ```bash
-        mlflow ui --backend-store-uri file:./ml/mlruns --host 0.0.0.0 --port 5000
-        ```
-    * Keep this terminal window open.
-6.  **Run the Model Training and Evaluation Script:**
-    * Build the `ml-env` Docker image (if not already built or `ml/requirements.txt` has changed):
-        ```bash
-        docker build -t ml-env -f ml/Dockerfile.ml .
-        ```
-    * Execute the training script, linking it to the MLflow UI:
-        ```bash
-        docker run \
-          -e DB_PASSWORD=password \
-          -e MLFLOW_TRACKING_URI=[http://host.docker.internal:5000](http://host.docker.internal:5000) \
-          ml-env python ml/scripts/train_model.py # Use your actual DB password.
-        ```
-    * After running, check `http://localhost:5000` in your browser to see the logged experiment.
+**Implementation Details:**
 
-## 4. Next Steps
+### 3.1. ML Inference Service (FastAPI)
 
-With the core hybrid ML model developed, trained, evaluated, and tracked, the project is now ready for **Phase 6: API Development & Integration**. The immediate next focus will be:
+1. **Architecture:**
+   * Implemented as a FastAPI application that loads the trained models and provides recommendation endpoints.
+   * Containerized using Docker for consistent deployment and isolation.
+   * Exposes a RESTful API on port 8000.
 
-* **Building the Python ML Inference Service:** This will be a lightweight web service (e.g., using FastAPI) responsible for loading the trained models and feature engineering tools (TF-IDF, OHE) from MLflow artifacts, and exposing a simple API endpoint for recommendation inference.
-* **Developing the Go API Service:** This main Go application (using Echo framework) will then communicate with the Python ML Inference Service to retrieve recommendations, handle primary API logic, and interact with the PostgreSQL database.
+2. **Key Endpoints:**
+   * `/recommend` - Generates personalized recommendations for a user based on the hybrid recommendation model.
+   * `/health` - Provides health check information about the ML service.
+
+3. **Implementation Details:**
+   * Loads trained models (CF model, TF-IDF vectorizer, One-Hot Encoder) from saved artifacts.
+   * Connects to the PostgreSQL database to retrieve up-to-date user and place data.
+   * Implements the hybrid recommendation algorithm that combines collaborative filtering and content-based approaches.
+   * Handles cold-start scenarios for new users with no rating history.
+
+### 3.2. Go API Service (Echo Framework)
+
+1. **Architecture:**
+   * Implemented using the Echo web framework in Go.
+   * Follows a clean architecture pattern with clear separation of concerns:
+     * **Handlers:** HTTP request handlers that parse requests and format responses.
+     * **Services:** Business logic layer that orchestrates operations.
+     * **Repositories:** Data access layer that interacts with the database and external services.
+     * **Models:** Data structures that represent domain entities.
+
+2. **Key Features:**
+   * **Place Management:** CRUD operations for tourism destinations.
+   * **User Management:** User registration, authentication, and profile management.
+   * **Ratings:** Allow users to rate tourism destinations.
+   * **Recommendations:** Integration with the ML inference service to provide personalized recommendations.
+
+3. **Implementation Details:**
+   * Connects to the PostgreSQL database for data persistence.
+   * Communicates with the ML inference service to retrieve recommendations.
+   * Implements middleware for authentication, logging, and error handling.
+   * Provides a RESTful API on port 8080.
+
+### 3.3. System Integration
+
+1. **Service Communication:**
+   * The Go API service communicates with the ML inference service via HTTP requests.
+   * Environment variables are used for service discovery and configuration.
+
+2. **Docker Compose Setup:**
+   * All services (PostgreSQL, MLflow, Data Ingestion, Model Training, ML Inference, Go API, Frontend) are orchestrated using Docker Compose.
+   * Services are properly configured with dependencies, ensuring they start in the correct order.
+   * Health checks are implemented to verify service availability.
+
+3. **Data Flow:**
+   * User requests are received by the Go API service.
+   * The Go API service processes the requests, potentially retrieving or storing data in the PostgreSQL database.
+   * For recommendation requests, the Go API service forwards the request to the ML inference service.
+   * The ML inference service generates recommendations using the trained models and returns them to the Go API service.
+   * The Go API service formats the response and returns it to the client.
+
+## 4. How to Run the Complete System
+
+To run the complete system, ensure you have Docker Desktop installed and running.
+
+1. **Clone the Repository:**
+   ```bash
+   git clone <repository-url>
+   cd IndonesiaTourismDestination
+   ```
+
+2. **Start the System using Docker Compose:**
+   ```bash
+   docker-compose up -d
+   ```
+   This will start all services in the correct order:
+   * PostgreSQL Database
+   * MLflow Tracking Server
+   * Data Ingestion Service (one-time job)
+   * Model Training Service (one-time job)
+   * ML Inference Service (FastAPI)
+   * Go API Service (Echo)
+   * Frontend Service (Nginx)
+
+3. **Access the Services:**
+   * **Frontend:** http://localhost:3000
+   * **Go API:** http://localhost:8080
+   * **ML Inference API:** http://localhost:8000
+   * **MLflow UI:** http://localhost:5000
+
+4. **API Documentation:**
+   * Go API Swagger Documentation: http://localhost:8080/swagger/index.html
+   * ML Inference API Documentation: http://localhost:8000/docs
+
+5. **Stopping the System:**
+   ```bash
+   docker-compose down
+   ```
+
+## 5. Next Steps
+
+With the complete system implemented and integrated, the project is now ready for the following next steps:
+
+1. **Cloud Deployment:**
+   * Deploy the system to a cloud provider (AWS, GCP, Azure).
+   * Set up CI/CD pipelines for automated testing and deployment.
+   * Implement monitoring and alerting for production use.
+
+2. **Performance Optimization:**
+   * Optimize the recommendation algorithm for better performance.
+   * Implement caching for frequently accessed data.
+   * Scale the system horizontally for increased load.
+
+3. **Feature Enhancements:**
+   * Implement user feedback mechanisms for recommendations.
+   * Add more sophisticated recommendation algorithms.
+   * Enhance the frontend with more interactive features.
+
+4. **Security Enhancements:**
+   * Implement more robust authentication and authorization.
+   * Add rate limiting and other security measures.
+   * Conduct security audits and penetration testing.
 
 ---
