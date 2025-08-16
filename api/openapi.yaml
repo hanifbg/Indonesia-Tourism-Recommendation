@@ -1,0 +1,193 @@
+openapi: 3.0.3
+info:
+  title: Indonesia Tourism Destination API
+  description: API for accessing tourism destinations in Indonesia and getting personalized recommendations
+  version: 1.0.0
+  
+servers:
+  - url: /api/v1
+    description: Base API path
+
+paths:
+  /place/{id}:
+    get:
+      summary: Get a tourism place by ID
+      description: Returns detailed information about a specific tourism destination
+      operationId: getPlaceById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the tourism place to retrieve
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Place'
+        '400':
+          description: Invalid ID supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /place/recommendations:
+    get:
+      summary: Get personalized place recommendations
+      description: Returns a list of recommended tourism destinations based on user preferences
+      operationId: getRecommendations
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          description: ID of the user to get recommendations for
+          schema:
+            type: integer
+            format: int32
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of recommendations to return (default is 10)
+          schema:
+            type: integer
+            format: int32
+            default: 10
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Place'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Place:
+      type: object
+      properties:
+        place_id:
+          type: integer
+          format: int32
+          example: 1
+        place_name:
+          type: string
+          example: "Borobudur Temple"
+        description:
+          type: string
+          example: "A 9th-century Mahayana Buddhist temple in Central Java"
+        category:
+          type: string
+          example: "Cultural"
+        city:
+          type: string
+          example: "Magelang"
+        price:
+          type: number
+          format: float
+          example: 25000
+        rating:
+          type: number
+          format: float
+          example: 4.7
+        time_minutes:
+          type: number
+          format: float
+          example: 120
+        coordinate:
+          type: string
+          example: "-7.607874,110.203751"
+        lat:
+          type: number
+          format: float
+          example: -7.607874
+        long:
+          type: number
+          format: float
+          example: 110.203751
+    
+    User:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int32
+          example: 1
+        location:
+          type: string
+          example: "Jakarta"
+        age:
+          type: integer
+          format: int32
+          example: 28
+    
+    Rating:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int32
+          example: 1
+        place_id:
+          type: integer
+          format: int32
+          example: 1
+        place_rating:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 5
+          example: 4
+        rating_timestamp:
+          type: string
+          format: date-time
+          example: "2023-01-15T14:30:00Z"
+    
+    RecommendationRequest:
+      type: object
+      required:
+        - user_id
+      properties:
+        user_id:
+          type: integer
+          format: int32
+          example: 1
+        limit:
+          type: integer
+          format: int32
+          default: 10
+          example: 5
+    
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Internal server error"
+        error:
+          type: string
+          example: "Invalid user_id"
